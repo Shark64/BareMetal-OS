@@ -13,13 +13,9 @@ align 16
 init_64:
 	; Make sure that memory range 0x110000 - 0x200000 is cleared
 	mov rdi, os_SystemVariables
-	xor rcx, rcx
+	mov rcx, 122880            ; Clear 960 KiB
 	xor rax, rax
-clearmem:
-	stosq
-	add rcx, 1
-	cmp rcx, 122880			; Clear 960 KiB
-	jne clearmem
+	rep stosq                  ; Store rax to [rdi], rcx - 1, rdi + 8, if rcx > 0 then do it again
 
 	mov word [os_Screen_Rows], 25
 	mov word [os_Screen_Cols], 80
