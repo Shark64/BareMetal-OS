@@ -102,6 +102,7 @@ rtc:
 	push rax
 
 	cld				; Clear direction flag
+	xor eax, eax			; Clear EAX
 	add qword [os_ClockCounter], 1	; 64-bit counter started at bootup
 
 	cmp byte [os_show_sysstatus], 0
@@ -112,15 +113,15 @@ rtc_no_sysstatus:
 	; Check to make sure that at least one core is running something
 	cmp word [os_QueueLen], 0	; Check the length of the Queue
 	jne rtc_end			; If it is greater than 0 then skip to the end
-	mov rcx, 256
+	xor ecx, ecx
+	mov cl, 256
 	mov rsi, cpustatus
 nextcpu:
-	lodsb
-	dec rcx
-	bt ax, 1			; Is bit 1 set? If so then the CPU is running a job
-	jc rtc_end
-	cmp rcx, 0
-	jne nextcpu
+	mov eax, [rsi]
+	test al, 1			; Is bit 1 set? If so then the CPU is running a job
+	jnz rtc_end
+	dec ecx
+	jz nextcpu
 	mov rax, os_command_line	; If nothing is running then restart the CLI
 	call os_smp_enqueue
 
@@ -227,9 +228,8 @@ ap_wakeup:
 	push rax
 
 	mov rdi, [os_LocalAPICAddress]	; Acknowledge the IPI
-	add rdi, 0xB0
 	xor eax, eax
-	stosd
+	mov [rdi+0xB0], eax
 
 	pop rax
 	pop rdi
@@ -244,9 +244,8 @@ ap_reset:
 	mov rax, ap_clear		; Set RAX to the address of ap_clear
 	mov [rsp], rax			; Overwrite the return address on the CPU's stack
 	mov rdi, [os_LocalAPICAddress]	; Acknowledge the IPI
-	add rdi, 0xB0
 	xor eax, eax
-	stosd
+	mov [rdi+0xB0], eax
 	iretq				; Return from the IPI. CPU will execute code at ap_clear
 ; -----------------------------------------------------------------------------
 
@@ -391,7 +390,7 @@ exception_gate_main:
 	call os_output
 	mov rsi, exc_string00
 	pop rax
-	and rax, 0x00000000000000FF	; Clear out everything in RAX except for AL
+	movzx eax, al			; Clear out everything in RAX except for AL
 	push rax
 	mov bl, 32			; Length of each message
 	mul bl				; AX = AL x BL
