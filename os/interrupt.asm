@@ -69,8 +69,7 @@ keyboard:
 keyboard_processkey:			; Convert the scancode
 	movzx byte ecx, [rbx+rax]
 	mov [key], cl
-	mov eax, ecx
-
+	
 keyboard_done:
 	mov rdi, [os_LocalAPICAddress]	; Acknowledge the IRQ on APIC
 	xor eax, eax
