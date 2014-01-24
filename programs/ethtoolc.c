@@ -1,3 +1,7 @@
+// gcc -c -m64 -nostdlib -nostartfiles -nodefaultlibs -fomit-frame-pointer -mno-red-zone -o ethtoolc.o ethtoolc.c
+// gcc -c -m64 -nostdlib -nostartfiles -nodefaultlibs -fomit-frame-pointer -mno-red-zone -o libBareMetal.o libBareMetal.c
+// ld -T app.ld -o ethtoolc.app ethtoolc.o libBareMetal.o
+
 #include "libBareMetal.h"
 
 void ethtool_send();
@@ -20,7 +24,7 @@ int main(void)
 		if (len != 0)
 		{
 			b_output("\nReceived packet\n");
-			b_system_misc(debug_dump_mem, packet, &len);
+			b_system_misc(debug_dump_mem, packet, len);
 		}
 		key = b_input_key();
 		if (key == 's')
