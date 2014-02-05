@@ -34,10 +34,10 @@ interrupt_gate:				; handler for all other interrupts
 ; This IRQ runs whenever there is input on the keyboard
 align 16
 keyboard:
-	push rdi
-	push rbx
-	push rax
-	push rcx
+	mov  r8,  rdi
+	mov  r9,  rbx
+	mov  r10, rax
+	mov  r11, rcx
 
 	xor eax, eax
 	xor edi, edi
@@ -55,8 +55,8 @@ keyboard:
 	setz dl
 	cmp al, 0xB6			; Right Shift Break
 	setz cl
-	or ecx,edx
-	add ecx, ebx 			; add for macrofusion
+	or ecx, edx
+	or ecx, ebx 			
 	jnz keyboard_shift
 	test al, 0x80
 	jnz keyboard_done
@@ -75,10 +75,10 @@ keyboard_done:
 	out 0x20, al
 	call os_smp_wakeup_all		; A terrible hack
 
-	pop rcx
-	pop rax
-	pop rbx
-	pop rdi
+	mov rcx, r11
+	mov rax, r10
+	mov rbx, r9
+	mov rdi, r8
 	iretq
 
 keyboard_shift:
@@ -93,12 +93,13 @@ keyboard_shift:
 ; -----------------------------------------------------------------------------
 ; Cascade interrupt. IRQ 0x02, INT 0x22
 cascade:
-	push rax
-
+	mov r8, rax
+	
+	xor eax, eax
 	mov al, 0x20			; Acknowledge the IRQ
 	out 0x20, al
 
-	pop rax
+	mov rax, r9
 	iretq
 ; -----------------------------------------------------------------------------
 
@@ -109,9 +110,7 @@ cascade:
 ; The supervisor lives here
 align 16
 rtc:
-	push rsi
-	push rcx
-	push rax
+	mov r8, rax
 
 	cld				; Clear direction flag
 	xor eax, eax			; Clear EAX
@@ -129,9 +128,7 @@ rtc_end:
 	out 0xA0, al
 	out 0x20, al
 
-	pop rax
-	pop rcx
-	pop rsi
+	mov rax, r8
 	iretq
 ; -----------------------------------------------------------------------------
 
@@ -148,10 +145,10 @@ network:
 	cld				; Clear direction flag
 	call os_ethernet_ack_int	; Call the driver function to acknowledge the interrupt internally
 
-	bt ax, 0				; TX bit set (caused the IRQ?)
-	jc network_tx			; If so then jump past RX section
-	bt ax, 7				; RX bit set
-	jnc network_end
+	test eax, 129				; RX bit set
+	jz network_end
+	test eax, 1				; TX bit set (caused the IRQ?)
+	jnz network_tx			; If so then jump past RX section
 network_rx_as_well:
 	mov byte [os_NetActivity_RX], 1
 	mov rdi, os_EthernetBuffer	; Raw packet is copied here
@@ -199,8 +196,8 @@ network_rx_as_well:
 
 network_tx:
 	mov byte [os_NetActivity_TX], 1
-	bt ax, 7
-	jc network_rx_as_well
+	test eax, 128
+	jnz network_rx_as_well
 
 network_end:
 	mov al, 0x20			; Acknowledge the IRQ on the PIC(s)
@@ -222,15 +219,15 @@ network_ack_only_low:
 ; A simple interrupt that just acknowledges an IPI. Useful for getting an AP past a 'hlt' in the code.
 align 16
 ap_wakeup:
-	push rdi
-	push rax
+	mov r8, rdi
+	mov r9, rax
 
 	mov rdi, [os_LocalAPICAddress]	; Acknowledge the IPI
 	xor eax, eax
 	mov [rdi+0xB0], eax
 
-	pop rax
-	pop rdi
+	mov rax, r9
+	mov rdi, r8
 	iretq				; Return from the IPI.
 ; -----------------------------------------------------------------------------
 
@@ -239,7 +236,7 @@ ap_wakeup:
 ; Resets a CPU to execute ap_clear
 align 16
 ap_reset:
-	mov rax, ap_clear		; Set RAX to the address of ap_clear
+	mov eax, ap_clear		; Set RAX to the address of ap_clear
 	mov [rsp], rax			; Overwrite the return address on the CPU's stack
 	mov rdi, [os_LocalAPICAddress]	; Acknowledge the IPI
 	xor eax, eax
