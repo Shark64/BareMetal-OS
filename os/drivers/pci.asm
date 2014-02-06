@@ -18,15 +18,15 @@ align 16
 ; OUT:	EAX = Register information
 ;	All other registers preserved
 os_pci_read_reg:
-	push rdx
-	push rcx
-	push rbx
-
+	mov r8, rdx
+	mov r9, rcx
+	mov r10 rbx
+	
 	shl ebx, 16			; Move Bus number to bits 23 - 16
 	shl ecx, 8			; Move Device/Slot/Fuction number to bits 15 - 8
-	mov bx, cx
+	or ebx, ecx
 	shl edx, 2
-	mov bl, dl
+	or ebx, edx
 	and ebx, 0x00ffffff		; Clear bits 31 - 24
 	or ebx, 0x80000000		; Set bit 31
 	mov eax, ebx
@@ -35,9 +35,9 @@ os_pci_read_reg:
 	mov dx, PCI_CONFIG_DATA
 	in eax, dx
 
-	pop rbx
-	pop rcx
-	pop rdx
+	mov rbx, r10
+	mov rcx, r9
+	mov rdx, r8
 ret
 ; -----------------------------------------------------------------------------
 
@@ -53,10 +53,10 @@ os_pci_dump_devices:
 	push rbx
 	push rax
 
-	xor rcx, rcx
-	xor rax, rax
+	xor ecx, ecx
 	
-	mov ecx, 0x80000000		; Bit 31 must be set
+	bts ecx, 31		; Bit 31 must be set
+	xor eax, eax
 
 os_pci_dump_devices_check_next:
 	mov eax, ecx
