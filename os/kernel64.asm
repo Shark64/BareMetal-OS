@@ -48,17 +48,14 @@ start:
 	call init_hdd			; Initialize the disk
 	call init_net			; Initialize the network
 
-	mov ax, [os_Screen_Rows]	; Display the "ready" message and reset cursor to bottom left
-	push ax
-	sub ax, 3
-	mov word [os_Screen_Cursor_Row], ax
-	mov word [os_Screen_Cursor_Col], 0
+	movzx eax, word [os_Screen_Rows]	; Display the "ready" message and reset cursor to bottom left
+	mov ebx, eax
+	sub eax, 3
+	mov [os_Screen_Cursor_Row], eax
 	mov rsi, readymsg
-	call os_output
-	pop ax
-	sub ax, 1
-	mov word [os_Screen_Cursor_Row], ax
-	mov word [os_Screen_Cursor_Col], 0
+	call os_output	
+	dec ebx
+	mov [os_Screen_Cursor_Row], ebx
 
 	mov rax, os_command_line	; Start the CLI
 	call os_smp_enqueue
@@ -77,32 +74,33 @@ ap_clear:				; All cores start here on first startup and after an exception
 	mov rsi, [os_LocalAPICAddress]
 	xor eax, eax			; Clear Task Priority (bits 7:4) and Task Priority Sub-Class (bits 3:0)
 	mov dword [rsi+0x80], eax	; APIC Task Priority Register (TPR)
-	mov eax, dword [rsi+0x20]	; APIC ID
-	shr rax, 24			; Shift to the right and AL now holds the CPU's APIC ID
+	movzx eax, byte [rsi+0x23]	; APIC ID
+					; AL now holds the CPU's APIC ID
 
 	; Calculate offset into CPU status table
-	mov rdi, cpustatus
-	add rdi, rax			; RDI points to this cores status byte (we will clear it later)
+	mov edi, cpustatus
+	add edi, eax			; RDI points to this cores status byte (we will clear it later)
 
 	; Set up the stack
-	shl rax, 21			; Shift left 21 bits for a 2 MiB stack
-	add rax, [os_StackBase]		; The stack decrements when you "push", start at 2 MiB in
-	mov rsp, rax
+	shl eax, 21			; Shift left 21 bits for a 2 MiB stack
+	add eax, [os_StackBase]		; The stack decrements when you "push", start at 2 MiB in
+	mov esp, eax
 
 	; Set the CPU status to "Present" and "Ready"
-	mov al, 00000001b		; Bit 0 set for "Present", Bit 1 clear for "Ready"
-	stosb				; Set status to Ready for this CPU
+	xor eax, eax
+	mov al,1			; Bit 0 set for "Present", Bit 1 clear for "Ready"
+	mov [rsi], al			; Set status to Ready for this CPU
 
 	sti				; Re-enable interrupts on this core
 
 	; Clear registers. Gives us a clean slate to work with
-	xor rax, rax			; aka r0
-	xor rcx, rcx			; aka r1
-	xor rdx, rdx			; aka r2
-	xor rbx, rbx			; aka r3
-	xor rbp, rbp			; aka r5, We skip RSP (aka r4) as it was previously set
-	xor rsi, rsi			; aka r6
-	xor rdi, rdi			; aka r7
+	xor eax, eax			; aka r0
+	xor ecx, ecx			; aka r1
+	xor edx, edx			; aka r2
+	xor ebx, ebx			; aka r3
+	xor ebp, ebp			; aka r5, We skip RSP (aka r4) as it was previously set
+	xor esi, esi			; aka r6
+	xor edi, edi			; aka r7
 	xor r8, r8
 	xor r9, r9
 	xor r10, r10
@@ -113,8 +111,9 @@ ap_clear:				; All cores start here on first startup and after an exception
 	xor r15, r15
 
 ap_spin:				; Spin until there is a workload in the queue
-	cmp word [os_QueueLen], 0	; Check the length of the queue
-	je ap_halt			; If the queue was empty then jump to the HLT
+	movzx eax, word [os_QueueLen]	; Check the length of the queue
+	test eax, eax
+	jz ap_halt			; If the queue was empty then jump to the HLT
 	call os_smp_dequeue		; Try to pull a workload out of the queue
 	jnc ap_process			; Carry clear if successful, jump to ap_process
 
@@ -134,15 +133,17 @@ ap_process:				; Set the status byte to "Busy" and run the code
 ;	pop rsi
 ;	sti
 
-	push rdi			; Push RDI since it is used temporarily
-	push rax			; Push RAX since os_smp_get_id uses it
+	mov r12, [os_LocalAPICAddress]
+	mov  r8, rdi			; Push RDI since it is used temporarily
+	mov  r9, rax			; Push RAX since os_smp_get_id uses it
 	mov rdi, cpustatus
-	call os_smp_get_id		; Set RAX to the APIC ID
+	mov eax, [r12+0x23]      	; APIC ID is stored in bits 31:24
 	add rdi, rax
-	mov al, 00000011b		; Bit 0 set for "Present", Bit 1 set for "Busy"
-	stosb
-	pop rax				; Pop RAX (holds the workload code address)
-	pop rdi				; Pop RDI (holds the variable/variable address)
+	xor eax, eax
+	mov al,3		; Bit 0 set for "Present", Bit 1 set for "Busy"
+	mov [rdi], al
+	mov rax, r9				; Pop RAX (holds the workload code address)
+	mov rdi, r8				; Pop RDI (holds the variable/variable address)
 
 	call rax			; Run the code
 
