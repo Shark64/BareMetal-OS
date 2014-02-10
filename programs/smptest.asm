@@ -17,19 +17,19 @@
 start:				; Start of program label
 
 	mov rax, ap_print_id	; Our code to run on all CPUs
-	xor rbx, rbx		; Clear RBX as there is no argument
-	mov rcx, 64		; Number of instances to spawn
+	xor ebx, ebx		; Clear RBX as there is no argument
+	xor ecx, ecx
+	mov cl, 64		; Number of instances to spawn
 
 spawn:
 	call [b_smp_enqueue]
-	sub rcx, 1
-	cmp rcx, 0
-	jne spawn
+	dec rcx
+	jnz spawn
 
 bsp:
 	call [b_smp_dequeue]	; Try to dequeue a workload
-	cmp eax, 0
-	je emptyqueue		; If 0 is returned then the queue is empty
+	test eax, eax
+	jz emptyqueue		; If 0 is returned then the queue is empty
 	call [b_smp_run]	; Otherwise run the workload
 	jmp bsp			; Try to do another workload
 
@@ -47,7 +47,7 @@ spacestring: db ' ', 0
 ; It requires mutually exclusive access while it creates the string and prints to the screen
 ; We must insure that only one CPU at a time can execute this code, so we employ a 'spinlock'.
 ap_print_id:
-	mov rcx, 0x1FFFFF
+	mov ecx, 0x1FFFFF
 delay:
 	dec rcx
 	cmp rcx, 0
