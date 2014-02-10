@@ -49,7 +49,7 @@ ethtool_send:
 	mov rsi, sendstring
 	call [b_output]
 	mov rsi, packet
-	mov rcx, 1522
+	mov ecx, 1522
 	call [b_ethernet_tx]
 	mov rsi, sentstring
 	call [b_output]
