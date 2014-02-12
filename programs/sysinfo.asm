@@ -16,54 +16,52 @@ start:				; Start of program label
 	call [b_output]		; Print the string that RSI points to
 
 ;Get processor brand string
-	xor rax, rax
 	mov rdi, tstring
 	mov eax, 0x80000002
 	cpuid
-	stosd
-	mov eax, ebx
-	stosd
-	mov eax, ecx
-	stosd
-	mov eax, edx
-	stosd
+	shl rbx, 32
+	or  rax, rbx
+	mov [rdi], rax
+	shl rdx, 32
+	or  rcx, rdx
+	mov [rdi+8], rcx
 	mov eax, 0x80000003
 	cpuid
-	stosd
-	mov eax, ebx
-	stosd
-	mov eax, ecx
-	stosd
-	mov eax, edx
-	stosd
+	shl rbx, 32
+	or  rax, rbx
+	mov [rdi+16], rax
+	shl rdx, 32
+	or  rcx, rdx
+	mov [rdi+24], rcx
 	mov eax, 0x80000004
 	cpuid
-	stosd
-	mov eax, ebx
-	stosd
-	mov eax, ecx
-	stosd
-	mov eax, edx
-	stosd
-	xor al, al
-	stosb			; Terminate the string
+	shl rbx, 32
+	or  rax, rbx
+	mov [rdi+32], rax
+	shl rdx, 32
+	or  rcx, rdx
+	mov [rdi+40], rcx
+	xor eax, eax
+	mov [rdi+48], al		; Terminate the string
 	mov rsi, cpustringmsg
 	call [b_output]
 	mov rsi, tstring
+	xor eax, eax
+	xor ebx, ebx
+	mov al, ' '
 check_for_space:		; Remove the leading spaces from the string
-	cmp byte [rsi], ' '
-	jne print_cpu_string
-	add rsi, 1
-	jmp check_for_space
+	cmp al, byte [rsi+rbx]
+	lea ebx, [ebx+1]
+	je check_for_space
 print_cpu_string:
+	add rsi, rbx
 	call [b_output]
 
 ; Number of cores
 	mov rsi, numcoresmsg
 	call [b_output]
-	xor rax, rax
-	mov rsi, 0x5012
-	lodsw
+	mov esi, 0x5012
+	movzx eax, word [rsi]
 	mov rdi, tstring
 	call int_to_string
 	mov rsi, tstring
@@ -72,9 +70,7 @@ print_cpu_string:
 ; Speed 
 	mov rsi, speedmsg
 	call [b_output]
-	xor rax, rax
-	mov rsi, 0x5010
-	lodsw
+	movzx eax, word [rsi-2]
 	mov rdi, tstring
 	call int_to_string
 	mov rsi, tstring
@@ -136,7 +132,7 @@ print_cpu_string:
 ;CPU features
 	mov rsi, cpufeatures
 	call [b_output]
-	mov rax, 1
+	mov eax, 1
 	cpuid
 
 checksse:
@@ -192,9 +188,8 @@ endit:
 ;RAM
 	mov rsi, memmessage
 	call [b_output]
-	xor rax, rax
-	mov rsi, 0x5020
-	lodsw
+	mov esi, 0x5020
+	movzx eax, word [rsi]
 	mov rdi, tstring
 	call int_to_string
 	mov rsi, tstring
@@ -228,23 +223,25 @@ int_to_string:
 	push rbx
 	push rax
 
-	mov rbx, 10					; base of the decimal system
+	mov ebx, 10					; base of the decimal system
 	xor ecx, ecx					; number of digits generated
 int_to_string_next_divide:
 	xor edx, edx					; RAX extended to (RDX,RAX)
 	div rbx						; divide by the number-base
 	push rdx					; save remainder on the stack
-	inc rcx						; and count this remainder
-	cmp rax, 0					; was the quotient zero?
-	jne int_to_string_next_divide			; no, do another division
+	inc ecx						; and count this remainder
+	test rax, rax					; was the quotient zero?
+	jnz int_to_string_next_divide			; no, do another division
 
 int_to_string_next_digit:
 	pop rax						; else pop recent remainder
 	add al, '0'					; and convert to a numeral
-	stosb						; store to memory-buffer
-	loop int_to_string_next_digit			; again for other remainders
-	xor al, al
-	stosb						; Store the null terminator at the end of the string
+	mov [rdi], al					; store to memory-buffer
+	add rdi, 1
+	dec ecx 
+	jnz int_to_string_next_digit			; again for other remainders
+	xor eax, eax
+	mov [rdi], al					; Store the null terminator at the end of the string
 
 	pop rax
 	pop rbx
