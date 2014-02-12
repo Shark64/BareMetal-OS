@@ -99,7 +99,7 @@ cascade:
 	mov al, 0x20			; Acknowledge the IRQ
 	out 0x20, al
 
-	mov rax, r9
+	mov rax, r8
 	iretq
 ; -----------------------------------------------------------------------------
 
@@ -114,13 +114,15 @@ rtc:
 
 	cld				; Clear direction flag
 	xor eax, eax			; Clear EAX
-	add qword [os_ClockCounter], 1	; 64-bit counter started at bootup
+	lea r9,  [eax+1]
+	add r9, [os_ClockCounter]	; 64-bit counter started at bootup
 
-	cmp byte [os_show_sysstatus], 0
+	cmp al, [os_show_sysstatus]
 	je rtc_end
 	call system_status		; Show System Status information on screen
 
 rtc_end:
+	mov [os_ClockCounter}, r9
 	mov al, 0x0C			; Select RTC register C
 	out 0x70, al			; Port 0x70 is the RTC index, and 0x71 is the RTC data
 	in al, 0x71			; Read the value in register C
