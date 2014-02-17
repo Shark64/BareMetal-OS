@@ -19,58 +19,55 @@ os_command_line:
 	mov [os_Font_Color], ebx
 
 	mov rdi, cli_temp_string
-	mov rcx, 250			; Limit the input to 250 characters
+	mov ecx, 250			; Limit the input to 250 characters
 	call os_input
 	call os_print_newline		; The user hit enter so print a new line
-	jrcxz os_command_line		; os_input_string stores the number of charaters received in RCX
+	test ecx, ecx
+	jz os_command_line		; os_input_string stores the number of charaters received in RCX
 
 	mov rsi, rdi
 	call os_string_parse		; Remove extra spaces
-	jrcxz os_command_line		; os_string_parse stores the number of words in RCX
+	test ecx, ecx
+	jz os_command_line		; os_string_parse stores the number of words in RCX
 	mov byte [app_argc], cl		; Store the number of words in the string
 
 	; Break the contents of cli_temp_string into individual strings
+	xor eax, eax
 	mov al, 0x20
-	mov bl, 0x00
+	xor ebx, ebx
 	call os_string_change_char
+	
+	mov eax, [rsi]
+	cmp ax, 'cl'			; 'CLS' entered?
+	je near clear_screen
 
-	mov rdi, cls_string		; 'CLS' entered?
-	call os_string_compare
-	jc near clear_screen
+	cmp ax, 'di'			; 'DIR' entered?
+	je near dir
 
-	mov rdi, dir_string		; 'DIR' entered?
-	call os_string_compare
-	jc near dir
+	cmp eax, 'exit'			; 'EXIT' entered?
+	je near exit
 
-	mov rdi, ver_string		; 'VER' entered?
-	call os_string_compare
-	jc near print_ver
+	cmp eax, 'debu'			; 'DEBUG' entered?
+	je near debug
 
-	mov rdi, exit_string		; 'EXIT' entered?
-	call os_string_compare
-	jc near exit
+	cmp eax, 'rebo'			; 'REBOOT' entered?
+	je reboot
 
-	mov rdi, help_string		; 'HELP' entered?
-	call os_string_compare
-	jc near print_help
+	cmp eax, 'test'			; 'TESTZONE' entered?
+	je near testzone
 
-	mov rdi, debug_string		; 'DEBUG' entered?
-	call os_string_compare
-	jc near debug
+	cmp eax, 'help'			; 'HELP' entered?
+	je near print_help
 
-	mov rdi, reboot_string		; 'REBOOT' entered?
-	call os_string_compare
-	jc reboot
-
-	mov rdi, testzone_string	; 'TESTZONE' entered?
-	call os_string_compare
-	jc near testzone
+	cmp ax, 've'			; 'VER' entered?
+	je near print_ver
 
 	; At this point it is not one of the built-in CLI functions. Prepare to check the filesystem.
 	call os_file_open
-	cmp rax, 0
-	je fail
-	mov rcx, 1
+	test eax, eax
+	jz fail
+	xor ecx, ecx
+	mov cl, 1
 	mov rdi, programlocation
 	; Program found, load and execute
 	call os_file_read
@@ -121,14 +118,17 @@ testzone:
 	jmp os_command_line
 
 debug:
-	mov rdx, 1			; argc
+	xor edx, edx
+	mov dl, 1			; argc
 	call os_system_config
 	cmp al, 1
 	je debug_dump_reg		; If it is only one then do a register dump
-	mov rcx, 16	
+	xor ecx, ecx
+	mov cl, 16	
+	lea esi, [edx+1]		; esi:=2
 	cmp al, 3			; Did we get at least 3?
-	jl noamount			; If not no amount was specified
-	mov al, 2
+	movzx eax, edx
+	cmovl eax, esi			; If not no amount was specified
 	call os_get_argv		; Get the amount of bytes to display
 	mov rsi, rax
 	call os_string_to_int		; Convert to an integer
@@ -177,31 +177,40 @@ exit:
 ; OUT:	RAX = location in string, or 0 if char not present
 ;	All other registers preserved
 os_string_find_char:
-	push rsi
-	push rcx
+	mov r8, rsi
+	
+	movdqu xmm1, [rsi]
+	movzx eax, al
+	imul 0x0101010101 ; propagate al
+	movd xmm0, eax
+	pshufd xmm0, xmm0, 0 ; xmm0:=al,al,al ecc
+	pcmpeqb xmm1, xmm0
+	pmovmskb eax, xmm1
+	test eax, eax
+	lea r9, [rsi+16]
+	cmovz rsi, r9
+	jz os_string_find_char_more:
+	bsf eax, eax
+	add rax, rsi
+	mov rsi, r8
+	ret
 
-	mov rcx, 1		; Counter -- start at first char
 os_string_find_char_more:
-	cmp byte [rsi], al
-	je os_string_find_char_done
-	cmp byte [rsi], 0
-	je os_string_find_char_not_found
-	inc rsi
-	inc rcx
-	jmp os_string_find_char_more
+	movdqu xmm1, [rsi]
+	pcmpeqb xmm1, xmm0
+	pmovmskb eax, xmm1
+	add rsi, 16
+	test eax, eax
+	jz os_string_find_char_more
 
 os_string_find_char_done:
-	mov rax, rcx
+	bsf eax, eax
+	sub rsi, 16
+	add rax, rsi
 
-	pop rcx
-	pop rsi
+	mov rsi, r8
 	ret
 
-os_string_find_char_not_found:
-	pop rcx
-	pop rsi
-	xor eax, eax	; not found, set RAX to 0
-	ret
 ; -----------------------------------------------------------------------------
 
 
@@ -213,27 +222,30 @@ os_string_find_char_not_found:
 ; OUT:	All registers preserved
 os_string_change_char:
 	push rsi
+	push rdx
 	push rcx
 	push rbx
 	push rax
 
-	mov cl, al
+	movzx ecx, al
+	movzx ebx, bl
 os_string_change_char_loop:
-	mov byte al, [rsi]
-	cmp al, 0
-	je os_string_change_char_done
+	movzx  eax, byte [rsi]
+	mov edx, ebx
 	cmp al, cl
-	jne os_string_change_char_no_change
-	mov byte [rsi], bl
+	cmovne edx, eax
+	mov byte [rsi], dl
 
 os_string_change_char_no_change:
 	inc rsi
-	jmp os_string_change_char_loop
+	test eax, eax
+	jnz os_string_change_char_loop
 
 os_string_change_char_done:
 	pop rax
 	pop rbx
 	pop rcx
+	pop rdx
 	pop rsi
 	ret
 ; -----------------------------------------------------------------------------
@@ -250,10 +262,11 @@ os_string_chomp:
 	push rax
 
 	call os_string_length		; Quick check to see if there are any characters in the string
-	jrcxz os_string_chomp_done	; No need to work on it if there is no data
+	test ecx, ecx
+	jz os_string_chomp_done		; No need to work on it if there is no data
 
 	mov rdi, rsi			; RDI will point to the start of the string...
-	push rdi			; ...while RSI will point to the "actual" start (without the spaces)
+	mov r8,  rsi			; ...while RSI will point to the "actual" start (without the spaces)
 	add rdi, rcx			; os_string_length stored the length in RCX
 
 os_string_chomp_findend:		; we start at the end of the string and move backwards until we don't find a space
@@ -263,9 +276,9 @@ os_string_chomp_findend:		; we start at the end of the string and move backwards
 	cmp byte [rdi], ' '
 	je os_string_chomp_findend
 
-	inc rdi				; we found the real end of the string so null terminate it
-	mov byte [rdi], 0x00
-	pop rdi
+	xor eax, eax			; we found the real end of the string so null terminate it
+	mov byte [rdi+1], al
+	mov rdi, r8
 
 os_string_chomp_start_count:		; read through string until we find a non-space character
 	cmp byte [rsi], ' '
@@ -274,9 +287,8 @@ os_string_chomp_start_count:		; read through string until we find a non-space ch
 	jmp os_string_chomp_start_count
 
 os_string_chomp_fail:			; In this situataion the string is all spaces
-	pop rdi				; We are about to bail out so make sure the stack is sane
-	mov al, 0x00
-	stosb
+	xor eax, eax
+	mov [r8], al
 	jmp os_string_chomp_done
 
 ; At this point RSI points to the actual start of the string (minus the leading spaces, if any)
@@ -285,8 +297,8 @@ os_string_chomp_fail:			; In this situataion the string is all spaces
 os_string_chomp_copy:		; Copy a byte from RSI to RDI one byte at a time until we find a NULL
 	lodsb
 	stosb
-	cmp al, 0x00
-	jne os_string_chomp_copy
+	test al, al
+	jnz os_string_chomp_copy
 
 os_string_chomp_done:
 	pop rax
@@ -313,7 +325,7 @@ os_string_parse:
 
 	call os_string_chomp		; Remove leading and trailing spaces
 	
-	cmp byte [rsi], 0x00		; Check the first byte
+	cmp cl, byte [rsi]		; Check the first byte
 	je os_string_parse_done		; If it is a null then bail out
 	inc rcx				; At this point we know we have at least one word
 
@@ -352,19 +364,29 @@ os_string_parse_done:
 ; OUT:	All registers preserved
 ; Note:	It is up to the programmer to ensure that there is sufficient space in the destination
 os_string_append:
-	push rsi
-	push rdi
-	push rcx
+	mov r8,  rsi
+	mov r9,  rdi
+	mov r10, rcx
+	mov r11, rax
 
-	xchg rsi, rdi
-	call os_string_length
-	xchg rsi, rdi
-	add rdi, rcx
-	call os_string_copy
+	xor ecx, ecx
+	xorps xmm0, xmm0
+os_string_append_lenght:
+	movdqa xmm1, xmm0
+	pcmpeqb xmm1, [rsi+rcx]
+	pmovmskb eax, xmm1
+	add ecx, 16
+	test eax, eax
+	jz os_string_append_lenght
 
-	pop rcx
-	pop rdi
-	pop rsi
+	bsf eax, eax
+	add ecx, eax
+	rep movsb
+	
+	mov rax, r11
+	mov rcx, r10
+	mov rdi, r9
+	mov rsi, r8
 	ret
 ; -----------------------------------------------------------------------------
 
@@ -428,7 +450,7 @@ os_bmfs_file_list:
 	mov eax, [hd1_size]
 	call os_int_to_string
 	dec rdi
-	mov al, 0
+	and rax, 0xF0
 
 	mov rsi, MiB_MSG
 	call os_string_length
@@ -444,10 +466,11 @@ os_bmfs_file_list:
 	mov rbx, rsi
 
 os_bmfs_list_next:
-	cmp byte [rbx], 0x00
+	movzx eax, byte [rbx]
+	test eax, eax
 	je os_bmfs_list_done
 
-	cmp byte [rbx], 0x01
+	cmp al, 0x01
 	jle os_bmfs_list_skip
 
 	mov rsi, rbx
@@ -463,7 +486,7 @@ os_bmfs_list_next:
 	mov rax, [rbx + BMFS_DirEnt.size]
 	call os_int_to_string
 	dec rdi
-
+	xor eax, eax
 	sub rcx, 20		; 20 ?
 	neg rcx
 	mov al, ' '
@@ -473,6 +496,7 @@ os_bmfs_list_next:
 	add rax, rax
 	call os_int_to_string
 	dec rdi
+	xor eax, eax
 	mov al, 13
 	stosb
 
@@ -482,8 +506,7 @@ os_bmfs_list_skip:
 	jne os_bmfs_list_next
 
 os_bmfs_list_done:
-	mov al, 0x00
-	stosb
+	mov [rdi], 0x00
 
 	pop rax
 	pop rbx
